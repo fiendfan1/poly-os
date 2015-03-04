@@ -14,8 +14,13 @@
 
 # Reserve a stack for the initial thread.
 .section .bootstrap_stack, "aw", @nobits
+.global stack_bottom
 stack_bottom:
-.skip 16384 # 16 KiB
+# .skip 16384 # 16 KiB
+# .skip 32768 # 32 KiB
+.skip 131072 # 128 KiB
+# .skip 1000000 # 1 MiB
+.global stack_top
 stack_top:
 
 # The kernel entry point.
@@ -23,6 +28,7 @@ stack_top:
 .global _start
 .type _start, @function
 _start:
+	# Set up stack.
 	movl $stack_top, %esp
 
 	# Initialize the core kernel before running the global constructors.

@@ -1,7 +1,7 @@
 #ifndef _STDLIB_H
 #define _STDLIB_H 1
 
-#include <sys/cdefs.h>
+#include <stddef.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -14,6 +14,10 @@ long strtol(const char*, char**, int);
 
 void* malloc(size_t);
 void free(void*);
+void* realloc(void*, size_t);
+
+// TODO
+#define exit(E)
 
 #ifdef __cplusplus
 }

@@ -1,4 +1,5 @@
 OUTPUT_FORMAT(elf32-i386)
+OUTPUT_ARCH(i386)
 /* The bootloader will look at this image and start execution at the symbol
    designated at the entry point. */
 ENTRY(_start)
@@ -37,15 +38,11 @@ SECTIONS
     {
         *(COMMON)
         *(.bss)
+        /* _stack_start = .; */
         *(.bootstrap_stack)
     }
 
-/*
-    .heap BLOCK(4K) : ALIGN(4K)
-    {
-
-    }
-*/
+    kernel_end = .;
 
     /* The compiler may produce other sections, put them in the proper place in
        in this file, if you'd like to include them in the final kernel. */

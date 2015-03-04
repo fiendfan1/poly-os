@@ -31,10 +31,13 @@ $(ARCH_FREEOBJS) \
 stdio/printf.o \
 stdio/putchar.o \
 stdio/puts.o \
+stdio/sprintf.o \
+stdio/fprintf.o \
 stdlib/abort.o \
 stdlib/strtod.o \
 stdlib/strtol.o \
 stdlib/malloc.o \
+stdlib/realloc.o \
 stdlib/free.o \
 string/memcmp.o \
 string/memcpy.o \
@@ -43,9 +46,11 @@ string/memset.o \
 string/strlen.o \
 string/strcpy.o \
 string/stpcpy.o \
-
-# string/sprintf.o
-# string/strcmp.o
+string/strcmp.o \
+string/strcat.o \
+unistd/sbrk.o \
+ctype/isspace.o \
+time.o
 
 HOSTEDOBJS:=\
 $(ARCH_HOSTEDOBJS) \

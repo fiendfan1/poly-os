@@ -1,7 +1,9 @@
+/*
 #include <stdint.h>
 #include <string.h>
+#include <stdio.h>
 //#include <kernel/alloc.h>
- 
+
 typedef struct DList_ DList;
 struct DList_ {
     DList *next;
@@ -199,6 +201,9 @@ void memory_init(void *mem, size_t size) {
     // make first/last as used so they never get merged
     first->used = 1;
     last->used = 1;
+
+    printf("Memory init: mem_start # %d # mem_end # %d #",
+            (uintptr_t)mem_start, (uintptr_t)mem_end);
  
     size_t len = memory_chunk_size(second);
     int n = memory_chunk_slot(len);
@@ -209,24 +214,31 @@ void memory_init(void *mem, size_t size) {
 }
  
 void* kmalloc(size_t size) {
-    //printf("%s(%#lx)\n", __FUNCTION__, size);
     size = (size + ALIGN - 1) & (~(ALIGN - 1));
  
     if (size < MIN_SIZE) size = MIN_SIZE;
  
     int n = memory_chunk_slot(size - 1) + 1;
  
-    if (n >= NUM_SIZES) return 0;
+    if (n >= NUM_SIZES) {
+        printf("kmalloc error #1");
+        return 0;
+    }
  
     while(!free_chunk[n]) {
         ++n;
-        if (n >= NUM_SIZES) return 0;
+        if (n >= NUM_SIZES) {
+            printf("kmalloc error #2");
+            return 0;
+        }
     }
  
     Chunk *chunk = DLIST_POP(&free_chunk[n], free);
     size_t size2 = memory_chunk_size(chunk);
     //printf("@ %p [%#lx]\n", chunk, size2);
     size_t len = 0;
+
+//    printf("MEM(%d)", (unsigned int)chunk);
  
     if (size + sizeof(Chunk) <= size2) {
         Chunk *chunk2 = (Chunk*)(((char*)chunk) + HEADER_SIZE + size);
@@ -248,7 +260,7 @@ void* kmalloc(size_t size) {
     //printf("  = %p [%p]\n", chunk->data, chunk);
     return chunk->data;
 }
- 
+
 static void remove_free(Chunk *chunk) {
     size_t len = memory_chunk_size(chunk);
     int n = memory_chunk_slot(len);
@@ -296,19 +308,18 @@ void kfree(void *mem) {
         push_free(chunk);
     }
 }
- 
-//#define MEM_SIZE (1024*1024*256)
-//XXX: CHANGED
-#define MEM_SIZE (128*128*256)
-char MEM[MEM_SIZE] = { 0 };
- 
-//#define MAX_BLOCK (1024*1024)
-//XXX: CHANGED
-#define MAX_BLOCK (128*126)
-//#define NUM_SLOTS 1024
-//XXX: CHANGED
-#define NUM_SLOTS 128
-void *slot[NUM_SLOTS] = { 0 };
+
+// XXX: Idk if this is correct...
+void* krealloc(void* mem, size_t size) {
+    Chunk *chunk = (Chunk*)((char*)mem - HEADER_SIZE);
+    size_t mem_len = memory_chunk_size(chunk);
+
+    void* new_mem = kmalloc(mem_len + size);
+    memcpy(new_mem, mem, mem_len);
+    kfree(mem);
+
+    return new_mem;
+}
  
 void check(void) {
     int    i;
@@ -328,4 +339,179 @@ void check(void) {
             } DLIST_ITERATOR_END(it);
         }
     }
+}
+*/
+#include <stddef.h>
+#include <stdint.h>
+#include <stdio.h>
+
+typedef struct _KHEAPBLOCKBM {
+    struct _KHEAPBLOCKBM *next;
+    uint32_t size;
+    uint32_t used;
+    uint32_t bsize;
+    uint32_t lfb;
+} KHEAPBLOCKBM;
+ 
+typedef struct _KHEAPBM {
+    KHEAPBLOCKBM            *fblock;
+} KHEAPBM;
+ 
+void k_heapBMInit(KHEAPBM *heap) {
+    heap->fblock = 0;
+}
+ 
+int k_heapBMAddBlock(KHEAPBM *heap, uintptr_t addr, uint32_t size, uint32_t bsize) {
+    KHEAPBLOCKBM        *b;
+    uint32_t                bcnt;
+    uint32_t                x;
+    uint8_t                *bm;
+ 
+    b = (KHEAPBLOCKBM*)addr;
+    b->size = size - sizeof(KHEAPBLOCKBM);
+    b->bsize = bsize;
+ 
+    b->next = heap->fblock;
+    heap->fblock = b;
+ 
+    bcnt = size / bsize;
+    bm = (uint8_t*)&b[1];
+ 
+    // clear bitmap
+    for (x = 0; x < bcnt; ++x) {
+            bm[x] = 0;
+    }
+ 
+    // reserve room for bitmap
+    bcnt = (bcnt / bsize) * bsize < bcnt ? bcnt / bsize + 1 : bcnt / bsize;
+    for (x = 0; x < bcnt; ++x) {
+            bm[x] = 5;
+    }
+ 
+    b->lfb = bcnt - 1;
+ 
+    b->used = bcnt;
+ 
+    return 1;
+}
+ 
+static uint8_t k_heapBMGetNID(uint8_t a, uint8_t b) {
+    uint8_t        c;    
+    for (c = a + 1; c == b || c == 0; ++c);
+    return c;
+}
+ 
+void *k_heapBMAlloc(KHEAPBM *heap, uint32_t size) {
+    KHEAPBLOCKBM        *b;
+    uint8_t                *bm;
+    uint32_t                bcnt;
+    uint32_t                x, y, z;
+    uint32_t                bneed;
+    uint8_t                nid;
+ 
+    // iterate blocks
+    for (b = heap->fblock; b; b = b->next) {
+        // check if block has enough room
+        if (b->size - (b->used * b->bsize) >= size) {
+ 
+            bcnt = b->size / b->bsize;        
+            bneed = (size / b->bsize) * b->bsize < size ? size / b->bsize + 1 : size / b->bsize;
+            bm = (uint8_t*)&b[1];
+ 
+            for (x = (b->lfb + 1 >= bcnt ? 0 : b->lfb + 1); x != b->lfb; ++x) {
+                // just wrap around
+                if (x >= bcnt) {
+                    x = 0;
+                }        
+ 
+                if (bm[x] == 0) {    
+                    // count free blocks
+                    for (y = 0; bm[x + y] == 0 && y < bneed && (x + y) < bcnt; ++y);
+ 
+                    // we have enough, now allocate them
+                    if (y == bneed) {
+                        // find ID that does not match left or right
+                        nid = k_heapBMGetNID(bm[x - 1], bm[x + y]);
+ 
+                        // allocate by setting id
+                        for (z = 0; z < y; ++z) {
+                            bm[x + z] = nid;
+                        }
+ 
+                        // optimization
+                        b->lfb = (x + bneed) - 2;
+ 
+                        // count used blocks NOT bytes
+                        b->used += y;
+ 
+                        return (void*)(x * b->bsize + (uintptr_t)&b[1]);
+                    }
+ 
+                    // x will be incremented by one ONCE more in our FOR loop
+                    x += (y - 1);
+                    continue;
+                }
+            }
+        }
+    }
+
+    printf("k_heapBMAlloc: error");
+    return 0;
+}
+ 
+void k_heapBMFree(KHEAPBM *heap, void *ptr) {
+    KHEAPBLOCKBM        *b;    
+    uintptr_t                ptroff;
+    uint32_t                bi, x;
+    uint8_t                *bm;
+    uint8_t                id;
+    uint32_t                max;
+ 
+    for (b = heap->fblock; b; b = b->next) {
+        if ((uintptr_t)ptr > (uintptr_t)b && (uintptr_t)ptr < (uintptr_t)b + b->size) {
+            // found block
+            ptroff = (uintptr_t)ptr - (uintptr_t)&b[1];  // get offset to get block
+            // block offset in BM
+            bi = ptroff / b->bsize;
+
+            bm = (uint8_t*)&b[1];
+            // clear allocation
+            id = bm[bi];
+            // oddly.. GCC did not optimize this
+            max = b->size / b->bsize;
+            for (x = bi; bm[x] == id && x < max; ++x) {
+                bm[x] = 0;
+            }
+            // update free block count
+            b->used -= x - bi;
+            return;
+        }
+    }
+ 
+    // this error needs to be raised or reported somehow
+    return;
+}
+
+
+KHEAPBM kheap;
+
+void kfree(void* mem)
+{
+    k_heapBMFree(&kheap, mem);
+}
+
+void* kmalloc(size_t size)
+{
+    k_heapBMAlloc(&kheap, size);
+}
+
+void* krealloc(void* mem, size_t size)
+{
+    return mem;  // XXX TODO
+}
+
+void memory_init(void* mem, size_t size)
+{
+    k_heapBMInit(&kheap);
+    k_heapBMAddBlock(&kheap, (uintptr_t)mem, size, 16);
 }
